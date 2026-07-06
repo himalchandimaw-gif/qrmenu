@@ -402,6 +402,12 @@ export default function AdminPage() {
                 <Eye className="h-5 w-5" />
                 View Menu
               </a>
+              <a
+  href="/admin/qr"
+  className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-bold text-gray-950 shadow-lg"
+>
+  QR Code
+</a>
 
               <button
                 onClick={logout}
