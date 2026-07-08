@@ -18,10 +18,12 @@ export default async function MenuPage({
 
   if (!restaurant) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-orange-50 p-4">
-        <div className="rounded-3xl bg-white p-8 text-center shadow">
-          <h1 className="text-2xl font-bold">Restaurant not found</h1>
-          <p className="mt-2 text-gray-600">Please check the QR menu link.</p>
+      <main className="flex min-h-screen items-center justify-center bg-neutral-100 p-4">
+        <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
+          <h1 className="text-2xl font-bold text-neutral-900">
+            Restaurant not found
+          </h1>
+          <p className="mt-2 text-neutral-500">Please check the QR menu link.</p>
         </div>
       </main>
     );
@@ -40,11 +42,17 @@ export default async function MenuPage({
     .eq("available", true)
     .order("display_order", { ascending: true });
 
+  const { data: customizations } = await supabase
+    .from("item_customizations")
+    .select("*")
+    .eq("restaurant_id", restaurant.id);
+
   return (
     <MenuClient
       restaurant={restaurant}
       categories={categories || []}
       items={items || []}
+      customizations={customizations || []}
     />
   );
 }

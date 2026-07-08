@@ -1,23 +1,30 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
+  Clock,
   Eye,
   ImagePlus,
+  Leaf,
+  Link2,
   LogOut,
   Pencil,
   Plus,
+  QrCode,
   Save,
   Search,
   Settings,
+  Sparkles,
   Star,
   Tags,
   Trash2,
   Upload,
   Utensils,
+  Video,
   X,
   XCircle,
 } from "lucide-react";
@@ -35,6 +42,7 @@ type Restaurant = {
 
 type Category = {
   id: string;
+  restaurant_id: string;
   name: string;
   display_order?: number | null;
 };
@@ -47,23 +55,60 @@ type MenuItem = {
   description?: string | null;
   price: number | string;
   image_url?: string | null;
+  video_url?: string | null;
   popular?: boolean | null;
   available?: boolean | null;
   display_order?: number | null;
+  spicy_level?: number | null;
+  prep_time?: string | null;
+  is_veg?: boolean | null;
+  is_new?: boolean | null;
+  allergens?: string | null;
   categories?: {
     name: string;
   } | null;
 };
 
-const emptyItemForm = {
+type Customization = {
+  id: string;
+  restaurant_id: string;
+  menu_item_id: string;
+  name: string;
+  options: unknown;
+};
+
+type ItemForm = {
+  id: string;
+  name: string;
+  description: string;
+  price: string;
+  image_url: string;
+  video_url: string;
+  category_id: string;
+  popular: boolean;
+  available: boolean;
+  spicy_level: string;
+  prep_time: string;
+  is_veg: boolean;
+  is_new: boolean;
+  allergens: string;
+};
+
+const emptyItemForm: ItemForm = {
   id: "",
   name: "",
   description: "",
   price: "",
   image_url: "",
+  video_url: "",
   category_id: "",
   popular: false,
   available: true,
+  spicy_level: "0",
+  prep_time: "",
+  is_veg: false,
+  is_new: false,
+  allergens: "",
 };
 
 export default function AdminPage() {
@@ -73,6 +118,7 @@ export default function AdminPage() {
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [customizations, setCustomizations] = useState<Customization[]>([]);
 
   const [activeTab, setActiveTab] = useState<"items" | "categories" | "settings">(
     "items"
@@ -85,7 +131,10 @@ export default function AdminPage() {
 
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [itemMode, setItemMode] = useState<"create" | "edit">("create");
-  const [itemForm, setItemForm] = useState<any>(emptyItemForm);
+  const [itemForm, setItemForm] = useState<ItemForm>(emptyItemForm);
+
+  const [optionName, setOptionName] = useState("");
+  const [optionValues, setOptionValues] = useState("");
 
   useEffect(() => {
     checkLogin();
@@ -139,6 +188,13 @@ export default function AdminPage() {
       .order("display_order", { ascending: true });
 
     setItems(itemData || []);
+
+    const { data: customizationData } = await supabase
+      .from("item_customizations")
+      .select("*")
+      .eq("restaurant_id", adminData.restaurant_id);
+
+    setCustomizations(customizationData || []);
   }
 
   const filteredItems = useMemo(() => {
@@ -159,8 +215,11 @@ export default function AdminPage() {
   }, [items, search, filterCategory]);
 
   const totalItems = items.length;
+  const availableItems = items.filter((item) => item.available).length;
   const popularItems = items.filter((item) => item.popular).length;
-  const unavailableItems = items.filter((item) => !item.available).length;
+  const videoItems = items.filter((item) => item.video_url).length;
+
+  const themeColor = restaurant?.theme_color || "#111111";
 
   async function logout() {
     await supabase.auth.signOut();
@@ -189,6 +248,8 @@ export default function AdminPage() {
   function openAddItem() {
     setItemMode("create");
     setItemForm(emptyItemForm);
+    setOptionName("");
+    setOptionValues("");
     setItemModalOpen(true);
   }
 
@@ -198,19 +259,28 @@ export default function AdminPage() {
       id: item.id,
       name: item.name || "",
       description: item.description || "",
-      price: item.price || "",
+      price: String(item.price || ""),
       image_url: item.image_url || "",
+      video_url: item.video_url || "",
       category_id: item.category_id || "",
       popular: Boolean(item.popular),
       available: Boolean(item.available),
+      spicy_level: String(item.spicy_level || 0),
+      prep_time: item.prep_time || "",
+      is_veg: Boolean(item.is_veg),
+      is_new: Boolean(item.is_new),
+      allergens: item.allergens || "",
     });
+
+    setOptionName("");
+    setOptionValues("");
     setItemModalOpen(true);
   }
 
   async function saveItem() {
     if (!restaurant) return;
 
-    if (!itemForm.name || !itemForm.price) {
+    if (!itemForm.name.trim() || !itemForm.price) {
       alert("Item name and price are required.");
       return;
     }
@@ -218,12 +288,18 @@ export default function AdminPage() {
     const payload = {
       restaurant_id: restaurant.id,
       category_id: itemForm.category_id || null,
-      name: itemForm.name,
+      name: itemForm.name.trim(),
       description: itemForm.description,
       price: Number(itemForm.price),
       image_url: itemForm.image_url,
-      popular: Boolean(itemForm.popular),
-      available: Boolean(itemForm.available),
+      video_url: itemForm.video_url,
+      popular: itemForm.popular,
+      available: itemForm.available,
+      spicy_level: Number(itemForm.spicy_level || 0),
+      prep_time: itemForm.prep_time,
+      is_veg: itemForm.is_veg,
+      is_new: itemForm.is_new,
+      allergens: itemForm.allergens,
     };
 
     if (itemMode === "create") {
@@ -264,6 +340,59 @@ export default function AdminPage() {
       return;
     }
 
+    setItemModalOpen(false);
+    await loadData();
+  }
+
+  async function addCustomization() {
+    if (!restaurant) return;
+
+    if (!itemForm.id) {
+      alert("Please save the item first. Then click Edit and add options.");
+      return;
+    }
+
+    if (!optionName.trim() || !optionValues.trim()) {
+      alert("Option name and values are required.");
+      return;
+    }
+
+    const optionsArray = optionValues
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const { error } = await supabase.from("item_customizations").insert({
+      restaurant_id: restaurant.id,
+      menu_item_id: itemForm.id,
+      name: optionName.trim(),
+      options: optionsArray,
+    });
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setOptionName("");
+    setOptionValues("");
+    await loadData();
+  }
+
+  async function deleteCustomization(id: string) {
+    const ok = confirm("Delete this option group?");
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("item_customizations")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
     await loadData();
   }
 
@@ -273,7 +402,7 @@ export default function AdminPage() {
 
     const { error } = await supabase.from("categories").insert({
       restaurant_id: restaurant.id,
-      name: categoryName,
+      name: categoryName.trim(),
       display_order: categories.length + 1,
     });
 
@@ -300,7 +429,6 @@ export default function AdminPage() {
       return;
     }
 
-    alert("Category updated");
     await loadData();
   }
 
@@ -345,10 +473,10 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-950 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-neutral-950 text-white">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-white" />
-          <p className="font-semibold">Loading admin panel...</p>
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+          <p className="font-semibold">Loading dashboard...</p>
         </div>
       </main>
     );
@@ -356,10 +484,10 @@ export default function AdminPage() {
 
   if (!restaurant) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
-        <div className="rounded-3xl bg-white p-8 text-center shadow">
-          <h1 className="text-2xl font-bold">No restaurant found</h1>
-          <p className="mt-2 text-gray-600">
+      <main className="flex min-h-screen items-center justify-center bg-neutral-100 p-4">
+        <div className="rounded-[2rem] bg-white p-8 text-center shadow-sm">
+          <h1 className="text-2xl font-black">No restaurant found</h1>
+          <p className="mt-2 text-neutral-500">
             Please connect this admin account to a restaurant.
           </p>
         </div>
@@ -367,80 +495,82 @@ export default function AdminPage() {
     );
   }
 
-  const themeColor = restaurant.theme_color || "#b45309";
-
   return (
-    <main className="min-h-screen bg-gray-100">
-      <div
-        className="relative overflow-hidden px-4 py-8 text-white"
-        style={{
-          background: `radial-gradient(circle at top left, ${themeColor}, #111827 55%, #030712)`,
-        }}
-      >
-        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/20 blur-3xl" />
-        <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-yellow-300/20 blur-3xl" />
-
-        <div className="relative mx-auto max-w-7xl">
-          <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
-            <div>
-              <p className="text-sm font-semibold text-white/60">
-                Restaurant QR Menu Dashboard
-              </p>
-              <h1 className="mt-1 text-4xl font-black">{restaurant.name}</h1>
-              <p className="mt-2 max-w-xl text-white/70">
-                Manage menu items, categories, prices, photos, theme and
-                availability.
-              </p>
+    <main className="min-h-screen bg-neutral-100 text-neutral-950">
+      <header className="border-b border-black/5 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-neutral-950 text-white">
+              {restaurant.logo_url ? (
+                <img
+                  src={restaurant.logo_url}
+                  alt={restaurant.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Utensils className="h-7 w-7" />
+              )}
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <a
-                href={`/menu/${restaurant.slug}`}
-                target="_blank"
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-bold text-gray-950 shadow-lg"
-              >
-                <Eye className="h-5 w-5" />
-                View Menu
-              </a>
-              <a
-  href="/admin/qr"
-  className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-bold text-gray-950 shadow-lg"
->
-  QR Code
-</a>
-
-              <button
-                onClick={logout}
-                className="inline-flex items-center gap-2 rounded-2xl bg-red-500 px-5 py-3 font-bold text-white shadow-lg"
-              >
-                <LogOut className="h-5 w-5" />
-                Logout
-              </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-black tracking-tight">
+                  {restaurant.name}
+                </h1>
+                <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-bold text-neutral-500">
+                  Admin
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-neutral-500">
+                Premium digital menu management
+              </p>
             </div>
           </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-4">
-            <StatsCard title="Menu Items" value={totalItems} icon={<Utensils />} />
-            <StatsCard title="Categories" value={categories.length} icon={<Tags />} />
-            <StatsCard title="Popular" value={popularItems} icon={<Star />} />
-            <StatsCard
-              title="Unavailable"
-              value={unavailableItems}
-              icon={<XCircle />}
-            />
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/menu/${restaurant.slug}`}
+              target="_blank"
+              className="inline-flex items-center gap-2 rounded-full bg-neutral-950 px-5 py-3 text-sm font-black text-white"
+            >
+              <Eye className="h-4 w-4" />
+              View Menu
+            </a>
+
+            <a
+              href="/admin/qr"
+              className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-neutral-950 ring-1 ring-black/10"
+            >
+              <QrCode className="h-4 w-4" />
+              QR Code
+            </a>
+
+            <button
+              onClick={logout}
+              className="inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white"
+            >
+              <LogOut className="h-4 w-4" />
+              Logout
+            </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="mx-auto max-w-7xl px-4 py-6">
-        <div className="-mt-10 rounded-[2rem] border border-white/70 bg-white/90 p-3 shadow-2xl backdrop-blur">
-          <div className="grid gap-3 md:grid-cols-3">
+      <section className="mx-auto max-w-7xl px-4 py-6">
+        <div className="grid gap-4 md:grid-cols-4">
+          <StatsCard title="Total Items" value={totalItems} icon={<Utensils />} />
+          <StatsCard title="Available" value={availableItems} icon={<CheckCircle2 />} />
+          <StatsCard title="Popular" value={popularItems} icon={<Star />} />
+          <StatsCard title="Videos" value={videoItems} icon={<Video />} />
+        </div>
+
+        <div className="mt-6 rounded-[2rem] bg-white p-2 shadow-sm ring-1 ring-black/5">
+          <div className="grid gap-2 md:grid-cols-3">
             <TabButton
               active={activeTab === "items"}
               label="Menu Items"
               icon={<Utensils />}
               onClick={() => setActiveTab("items")}
-              themeColor={themeColor}
             />
 
             <TabButton
@@ -448,7 +578,6 @@ export default function AdminPage() {
               label="Categories"
               icon={<Tags />}
               onClick={() => setActiveTab("categories")}
-              themeColor={themeColor}
             />
 
             <TabButton
@@ -456,7 +585,6 @@ export default function AdminPage() {
               label="Settings"
               icon={<Settings />}
               onClick={() => setActiveTab("settings")}
-              themeColor={themeColor}
             />
           </div>
         </div>
@@ -468,157 +596,170 @@ export default function AdminPage() {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
-              className="mt-6"
+              className="mt-6 rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-black/5"
             >
-              <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-                  <div>
-                    <h2 className="text-2xl font-black text-gray-900">
-                      Menu Items
-                    </h2>
-                    <p className="text-sm text-gray-500">
-                      Search, add, edit, delete and manage item options.
+              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1 text-xs font-black text-neutral-500">
+                    <Sparkles className="h-3 w-3" />
+                    Premium menu control
+                  </div>
+
+                  <h2 className="mt-3 text-3xl font-black tracking-tight">
+                    Menu Items
+                  </h2>
+
+                  <p className="mt-1 text-sm text-neutral-500">
+                    Add photos, videos, prices and item-specific custom options.
+                  </p>
+                </div>
+
+                <button
+                  onClick={openAddItem}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-neutral-950 px-6 py-4 font-black text-white"
+                >
+                  <Plus className="h-5 w-5" />
+                  Add Item
+                </button>
+              </div>
+
+              <div className="mt-6 grid gap-3 md:grid-cols-[1fr_260px]">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search item name, category or description..."
+                    className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 py-4 pl-12 pr-4 outline-none transition focus:border-neutral-500 focus:bg-white"
+                  />
+                </div>
+
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-4 outline-none transition focus:border-neutral-500 focus:bg-white"
+                >
+                  <option value="all">All categories</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {filteredItems.length === 0 && (
+                  <div className="rounded-[2rem] border border-dashed border-neutral-300 p-10 text-center">
+                    <Search className="mx-auto h-10 w-10 text-neutral-400" />
+                    <h3 className="mt-3 text-xl font-black">No items found</h3>
+                    <p className="mt-1 text-neutral-500">
+                      Try another search or add a new item.
                     </p>
                   </div>
+                )}
 
-                  <button
-                    onClick={openAddItem}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-bold text-white shadow-lg"
-                    style={{ backgroundColor: themeColor }}
+                {filteredItems.map((item) => (
+                  <motion.div
+                    key={item.id}
+                    whileHover={{ y: -2 }}
+                    onClick={() => openEditItem(item)}
+                    className="grid cursor-pointer gap-4 rounded-[1.75rem] border border-neutral-100 bg-white p-3 transition hover:border-neutral-300 hover:shadow-lg md:grid-cols-[96px_1fr_auto]"
                   >
-                    <Plus className="h-5 w-5" />
-                    Add Item
-                  </button>
-                </div>
-
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
-                  <div className="relative md:col-span-2">
-                    <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search by item name, category or description..."
-                      className="w-full rounded-2xl border border-gray-200 bg-gray-50 py-4 pl-12 pr-4 outline-none focus:border-gray-400 focus:bg-white"
-                    />
-                  </div>
-
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 outline-none focus:border-gray-400 focus:bg-white"
-                  >
-                    <option value="all">All categories</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="mt-5 space-y-3">
-                  {filteredItems.length === 0 && (
-                    <div className="rounded-3xl border border-dashed p-10 text-center">
-                      <Search className="mx-auto h-10 w-10 text-gray-400" />
-                      <h3 className="mt-3 text-lg font-bold">No items found</h3>
-                      <p className="text-gray-500">
-                        Try another search or add a new menu item.
-                      </p>
+                    <div className="h-28 overflow-hidden rounded-[1.25rem] bg-neutral-100 md:h-24 md:w-24">
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-neutral-950 text-white">
+                          <ImagePlus className="h-8 w-8" />
+                        </div>
+                      )}
                     </div>
-                  )}
 
-                  {filteredItems.map((item) => (
-                    <motion.div
-                      key={item.id}
-                      whileHover={{ y: -2 }}
-                      onClick={() => openEditItem(item)}
-                      className="grid cursor-pointer gap-4 rounded-3xl border bg-white p-4 transition hover:border-gray-300 hover:shadow-md md:grid-cols-[90px_1fr_auto]"
-                    >
-                      <div className="h-24 w-full overflow-hidden rounded-2xl bg-gray-100 md:h-24 md:w-24">
-                        {item.image_url ? (
-                          <img
-                            src={item.image_url}
-                            alt={item.name}
-                            className="h-full w-full object-cover"
-                          />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-xl font-black">
+                          {item.name}
+                        </h3>
+
+                        {item.popular && <Pill>Popular</Pill>}
+                        {item.is_new && <Pill>New</Pill>}
+                        {item.video_url && <Pill>Video</Pill>}
+
+                        {item.available ? (
+                          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-black text-green-700">
+                            Available
+                          </span>
                         ) : (
-                          <div
-                            className="flex h-full w-full items-center justify-center text-white"
-                            style={{ backgroundColor: themeColor }}
-                          >
-                            <ImagePlus className="h-8 w-8" />
-                          </div>
+                          <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-700">
+                            Hidden
+                          </span>
                         )}
                       </div>
 
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-xl font-black text-gray-900">
-                            {item.name}
-                          </h3>
+                      <p className="mt-1 text-sm font-semibold text-neutral-500">
+                        {item.categories?.name || "No category"}
+                      </p>
 
-                          {item.popular && (
-                            <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-700">
-                              ⭐ Popular
-                            </span>
-                          )}
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-neutral-500">
+                        {item.description || "No description"}
+                      </p>
 
-                          {item.available ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
-                              <CheckCircle2 className="h-3 w-3" />
-                              Available
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
-                              <XCircle className="h-3 w-3" />
-                              Hidden
-                            </span>
-                          )}
-                        </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-neutral-500">
+                        {item.prep_time && (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {item.prep_time}
+                          </span>
+                        )}
 
-                        <p className="mt-1 text-sm text-gray-500">
-                          {item.categories?.name || "No category"}
-                        </p>
+                        {item.is_veg && (
+                          <span className="inline-flex items-center gap-1">
+                            <Leaf className="h-3 w-3" />
+                            Veg
+                          </span>
+                        )}
 
-                        <p className="mt-2 line-clamp-2 text-sm text-gray-600">
-                          {item.description || "No description"}
-                        </p>
+                        {item.spicy_level ? (
+                          <span>Spicy {item.spicy_level}/5</span>
+                        ) : null}
                       </div>
+                    </div>
 
-                      <div className="flex items-center justify-between gap-3 md:flex-col md:items-end">
-                        <p
-                          className="rounded-full px-4 py-2 text-lg font-black text-white"
-                          style={{ backgroundColor: themeColor }}
+                    <div className="flex items-center justify-between gap-3 md:flex-col md:items-end">
+                      <p className="rounded-full bg-neutral-950 px-4 py-2 text-lg font-black text-white">
+                        Rs. {Number(item.price).toLocaleString("en-LK")}
+                      </p>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditItem(item);
+                          }}
+                          className="inline-flex items-center gap-2 rounded-full bg-neutral-100 px-4 py-2 text-sm font-black text-neutral-800"
                         >
-                          Rs. {Number(item.price).toLocaleString("en-LK")}
-                        </p>
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </button>
 
-                        <div className="flex gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditItem(item);
-                            }}
-                            className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-sm font-bold text-white"
-                          >
-                            <Pencil className="h-4 w-4" />
-                            Edit
-                          </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteItem(item.id);
-                            }}
-                            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteItem(item.id);
+                          }}
+                          className="rounded-full bg-red-600 px-4 py-2 text-sm font-black text-white"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                    </motion.div>
-                  ))}
-                </div>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </motion.section>
           )}
@@ -629,34 +770,34 @@ export default function AdminPage() {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
-              className="mt-6 rounded-[2rem] bg-white p-5 shadow-sm"
+              className="mt-6 rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-black/5"
             >
-              <h2 className="text-2xl font-black text-gray-900">Categories</h2>
-              <p className="text-sm text-gray-500">
-                Add and edit menu categories.
+              <h2 className="text-3xl font-black tracking-tight">Categories</h2>
+              <p className="mt-1 text-sm text-neutral-500">
+                Organize menu items by category.
               </p>
 
-              <div className="mt-5 flex gap-3">
+              <div className="mt-6 flex gap-3">
                 <input
                   value={categoryName}
                   onChange={(e) => setCategoryName(e.target.value)}
-                  placeholder="Example: Rice, Kottu, Coffee"
-                  className="flex-1 rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white"
+                  placeholder="Example: Rice, Coffee, Desserts"
+                  className="flex-1 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 outline-none focus:border-neutral-500 focus:bg-white"
                 />
 
                 <button
                   onClick={addCategory}
-                  className="rounded-2xl bg-gray-900 px-6 font-bold text-white"
+                  className="rounded-2xl bg-neutral-950 px-6 font-black text-white"
                 >
                   Add
                 </button>
               </div>
 
-              <div className="mt-5 space-y-3">
+              <div className="mt-6 space-y-3">
                 {categories.map((cat, index) => (
                   <div
                     key={cat.id}
-                    className="grid gap-3 rounded-3xl border p-4 md:grid-cols-[1fr_160px_auto]"
+                    className="grid gap-3 rounded-[1.5rem] border border-neutral-100 p-3 md:grid-cols-[1fr_160px_auto]"
                   >
                     <input
                       value={cat.name || ""}
@@ -665,7 +806,7 @@ export default function AdminPage() {
                         copy[index].name = e.target.value;
                         setCategories(copy);
                       }}
-                      className="rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white"
+                      className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 outline-none focus:border-neutral-500 focus:bg-white"
                     />
 
                     <input
@@ -676,20 +817,20 @@ export default function AdminPage() {
                         copy[index].display_order = Number(e.target.value);
                         setCategories(copy);
                       }}
-                      className="rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white"
+                      className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 outline-none focus:border-neutral-500 focus:bg-white"
                     />
 
                     <div className="flex gap-2">
                       <button
                         onClick={() => updateCategory(cat)}
-                        className="rounded-2xl bg-green-700 px-5 font-bold text-white"
+                        className="rounded-2xl bg-neutral-950 px-5 font-black text-white"
                       >
                         Save
                       </button>
 
                       <button
                         onClick={() => deleteCategory(cat.id)}
-                        className="rounded-2xl bg-red-600 px-5 font-bold text-white"
+                        className="rounded-2xl bg-red-600 px-5 font-black text-white"
                       >
                         Delete
                       </button>
@@ -706,46 +847,47 @@ export default function AdminPage() {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
-              className="mt-6 rounded-[2rem] bg-white p-5 shadow-sm"
+              className="mt-6 rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-black/5"
             >
-              <h2 className="text-2xl font-black text-gray-900">
+              <h2 className="text-3xl font-black tracking-tight">
                 Restaurant Settings
               </h2>
-              <p className="text-sm text-gray-500">
-                Change name, logo, description and theme colors.
+
+              <p className="mt-1 text-sm text-neutral-500">
+                Update brand details and minimalist menu colors.
               </p>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <input
-                  value={restaurant.name || ""}
-                  onChange={(e) =>
-                    setRestaurant({ ...restaurant, name: e.target.value })
-                  }
-                  placeholder="Restaurant name"
-                  className="rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white"
-                />
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <InputBox label="Restaurant Name">
+                  <input
+                    value={restaurant.name || ""}
+                    onChange={(e) =>
+                      setRestaurant({ ...restaurant, name: e.target.value })
+                    }
+                    className="w-full bg-transparent outline-none"
+                  />
+                </InputBox>
 
-                <input
-                  value={restaurant.slug || ""}
-                  disabled
-                  className="rounded-2xl border border-gray-200 bg-gray-100 p-4 text-gray-500"
-                />
+                <InputBox label="Menu Slug">
+                  <input
+                    value={restaurant.slug || ""}
+                    disabled
+                    className="w-full bg-transparent text-neutral-500 outline-none"
+                  />
+                </InputBox>
 
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  <label className="mb-2 block text-sm font-bold text-gray-600">
-                    Theme color
-                  </label>
-                  <div className="flex gap-3">
+                <InputBox label="Theme Color">
+                  <div className="flex items-center gap-3">
                     <input
                       type="color"
-                      value={restaurant.theme_color || "#b45309"}
+                      value={restaurant.theme_color || "#111111"}
                       onChange={(e) =>
                         setRestaurant({
                           ...restaurant,
                           theme_color: e.target.value,
                         })
                       }
-                      className="h-12 w-16 rounded-xl"
+                      className="h-10 w-14 rounded-xl"
                     />
 
                     <input
@@ -756,26 +898,23 @@ export default function AdminPage() {
                           theme_color: e.target.value,
                         })
                       }
-                      className="flex-1 bg-transparent outline-none"
+                      className="w-full bg-transparent outline-none"
                     />
                   </div>
-                </div>
+                </InputBox>
 
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  <label className="mb-2 block text-sm font-bold text-gray-600">
-                    Background color
-                  </label>
-                  <div className="flex gap-3">
+                <InputBox label="Background Color">
+                  <div className="flex items-center gap-3">
                     <input
                       type="color"
-                      value={restaurant.background_color || "#fff7ed"}
+                      value={restaurant.background_color || "#f5f5f4"}
                       onChange={(e) =>
                         setRestaurant({
                           ...restaurant,
                           background_color: e.target.value,
                         })
                       }
-                      className="h-12 w-16 rounded-xl"
+                      className="h-10 w-14 rounded-xl"
                     />
 
                     <input
@@ -786,29 +925,34 @@ export default function AdminPage() {
                           background_color: e.target.value,
                         })
                       }
-                      className="flex-1 bg-transparent outline-none"
+                      className="w-full bg-transparent outline-none"
                     />
                   </div>
-                </div>
+                </InputBox>
 
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 md:col-span-2">
-                  <label className="mb-2 block text-sm font-bold text-gray-600">
-                    Logo
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 md:col-span-2">
+                  <label className="mb-3 block text-sm font-black text-neutral-600">
+                    Restaurant Logo
                   </label>
 
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-neutral-950 px-5 py-3 text-sm font-black text-white">
+                    <Upload className="h-4 w-4" />
+                    Upload Logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
 
-                      const url = await uploadImage(file);
-                      if (url) {
-                        setRestaurant({ ...restaurant, logo_url: url });
-                      }
-                    }}
-                  />
+                        const url = await uploadImage(file);
+                        if (url) {
+                          setRestaurant({ ...restaurant, logo_url: url });
+                        }
+                      }}
+                    />
+                  </label>
 
                   {restaurant.logo_url && (
                     <img
@@ -828,14 +972,13 @@ export default function AdminPage() {
                     })
                   }
                   placeholder="Restaurant description"
-                  className="min-h-32 rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white md:col-span-2"
+                  className="min-h-32 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 outline-none focus:border-neutral-500 focus:bg-white md:col-span-2"
                 />
               </div>
 
               <button
                 onClick={updateRestaurant}
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl px-6 py-4 font-bold text-white"
-                style={{ backgroundColor: themeColor }}
+                className="mt-6 inline-flex items-center gap-2 rounded-full bg-neutral-950 px-6 py-4 font-black text-white"
               >
                 <Save className="h-5 w-5" />
                 Save Settings
@@ -843,66 +986,137 @@ export default function AdminPage() {
             </motion.section>
           )}
         </AnimatePresence>
-      </div>
+      </section>
 
       <AnimatePresence>
         {itemModalOpen && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          <ItemModal
+            itemMode={itemMode}
+            itemForm={itemForm}
+            setItemForm={setItemForm}
+            categories={categories}
+            customizations={customizations}
+            optionName={optionName}
+            setOptionName={setOptionName}
+            optionValues={optionValues}
+            setOptionValues={setOptionValues}
+            uploadImage={uploadImage}
+            saveItem={saveItem}
+            deleteItem={deleteItem}
+            addCustomization={addCustomization}
+            deleteCustomization={deleteCustomization}
+            onClose={() => setItemModalOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+    </main>
+  );
+}
+
+function ItemModal({
+  itemMode,
+  itemForm,
+  setItemForm,
+  categories,
+  customizations,
+  optionName,
+  setOptionName,
+  optionValues,
+  setOptionValues,
+  uploadImage,
+  saveItem,
+  deleteItem,
+  addCustomization,
+  deleteCustomization,
+  onClose,
+}: {
+  itemMode: "create" | "edit";
+  itemForm: ItemForm;
+  setItemForm: (value: ItemForm) => void;
+  categories: Category[];
+  customizations: Customization[];
+  optionName: string;
+  setOptionName: (value: string) => void;
+  optionValues: string;
+  setOptionValues: (value: string) => void;
+  uploadImage: (file: File) => Promise<string>;
+  saveItem: () => Promise<void>;
+  deleteItem: (id: string) => Promise<void>;
+  addCustomization: () => Promise<void>;
+  deleteCustomization: (id: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const itemCustomizations = customizations.filter(
+    (custom) => custom.menu_item_id === itemForm.id
+  );
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 60, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 60, scale: 0.98 }}
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-t-[2rem] bg-white shadow-2xl md:rounded-[2rem]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-100 bg-white/90 p-5 backdrop-blur">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-neutral-400">
+              Menu Item
+            </p>
+
+            <h2 className="mt-1 text-3xl font-black tracking-tight">
+              {itemMode === "create" ? "Add New Item" : "Edit Item"}
+            </h2>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="rounded-full bg-neutral-100 p-3 text-neutral-900"
           >
-            <motion.div
-              initial={{ opacity: 0, y: 30, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 30, scale: 0.96 }}
-              className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl"
-            >
-              <div className="flex items-center justify-between border-b pb-4">
-                <div>
-                  <h2 className="text-2xl font-black text-gray-900">
-                    {itemMode === "create" ? "Add New Item" : "Edit Item"}
-                  </h2>
-                  <p className="text-sm text-gray-500">
-                    Update item name, price, photo, category and options.
-                  </p>
-                </div>
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-                <button
-                  onClick={() => setItemModalOpen(false)}
-                  className="rounded-full bg-gray-100 p-3"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="grid gap-5 p-5 lg:grid-cols-[1fr_360px]">
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <InputBox label="Item Name">
                 <input
                   value={itemForm.name}
                   onChange={(e) =>
                     setItemForm({ ...itemForm, name: e.target.value })
                   }
-                  placeholder="Item name"
-                  className="rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white"
+                  placeholder="Chicken Kottu"
+                  className="w-full bg-transparent outline-none"
                 />
+              </InputBox>
 
+              <InputBox label="Price">
                 <input
                   type="number"
                   value={itemForm.price}
                   onChange={(e) =>
                     setItemForm({ ...itemForm, price: e.target.value })
                   }
-                  placeholder="Price"
-                  className="rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white"
+                  placeholder="1200"
+                  className="w-full bg-transparent outline-none"
                 />
+              </InputBox>
 
+              <InputBox label="Category">
                 <select
                   value={itemForm.category_id}
                   onChange={(e) =>
                     setItemForm({ ...itemForm, category_id: e.target.value })
                   }
-                  className="rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white"
+                  className="w-full bg-transparent outline-none"
                 >
                   <option value="">No category</option>
                   {categories.map((cat) => (
@@ -911,115 +1125,291 @@ export default function AdminPage() {
                     </option>
                   ))}
                 </select>
+              </InputBox>
 
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 font-bold text-gray-600">
-                  <Upload className="h-5 w-5" />
-                  Upload Photo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-
-                      const url = await uploadImage(file);
-                      if (url) {
-                        setItemForm({ ...itemForm, image_url: url });
-                      }
-                    }}
-                  />
-                </label>
-
-                {itemForm.image_url && (
-                  <img
-                    src={itemForm.image_url}
-                    alt="Preview"
-                    className="h-56 w-full rounded-3xl object-cover md:col-span-2"
-                  />
-                )}
-
-                <textarea
-                  value={itemForm.description}
+              <InputBox label="Preparation Time">
+                <input
+                  value={itemForm.prep_time}
                   onChange={(e) =>
-                    setItemForm({ ...itemForm, description: e.target.value })
+                    setItemForm({ ...itemForm, prep_time: e.target.value })
                   }
-                  placeholder="Description"
-                  className="min-h-28 rounded-2xl border border-gray-200 bg-gray-50 p-4 outline-none focus:border-gray-400 focus:bg-white md:col-span-2"
+                  placeholder="10-15 min"
+                  className="w-full bg-transparent outline-none"
                 />
+              </InputBox>
 
-                <label className="flex items-center justify-between rounded-2xl border bg-gray-50 p-4">
-                  <div>
-                    <p className="font-bold">Popular Item</p>
-                    <p className="text-sm text-gray-500">
-                      Show this item in popular section.
-                    </p>
-                  </div>
+              <InputBox label="Spicy Level">
+                <select
+                  value={itemForm.spicy_level}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, spicy_level: e.target.value })
+                  }
+                  className="w-full bg-transparent outline-none"
+                >
+                  <option value="0">No spicy</option>
+                  <option value="1">1 / 5</option>
+                  <option value="2">2 / 5</option>
+                  <option value="3">3 / 5</option>
+                  <option value="4">4 / 5</option>
+                  <option value="5">5 / 5</option>
+                </select>
+              </InputBox>
+
+              <InputBox label="Allergens">
+                <input
+                  value={itemForm.allergens}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, allergens: e.target.value })
+                  }
+                  placeholder="Milk, nuts, egg"
+                  className="w-full bg-transparent outline-none"
+                />
+              </InputBox>
+            </div>
+
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+              <label className="mb-2 block text-sm font-black text-neutral-600">
+                Description
+              </label>
+
+              <textarea
+                value={itemForm.description}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, description: e.target.value })
+                }
+                placeholder="Short premium description for customers..."
+                className="min-h-28 w-full bg-transparent outline-none"
+              />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <ToggleBox
+                title="Popular Item"
+                text="Show in popular section"
+                checked={itemForm.popular}
+                onChange={(value) =>
+                  setItemForm({ ...itemForm, popular: value })
+                }
+              />
+
+              <ToggleBox
+                title="Available"
+                text="Turn off to hide from customer menu"
+                checked={itemForm.available}
+                onChange={(value) =>
+                  setItemForm({ ...itemForm, available: value })
+                }
+              />
+
+              <ToggleBox
+                title="Vegetarian"
+                text="Show veg badge"
+                checked={itemForm.is_veg}
+                onChange={(value) =>
+                  setItemForm({ ...itemForm, is_veg: value })
+                }
+              />
+
+              <ToggleBox
+                title="New Item"
+                text="Show new badge"
+                checked={itemForm.is_new}
+                onChange={(value) =>
+                  setItemForm({ ...itemForm, is_new: value })
+                }
+              />
+            </div>
+
+            {itemMode === "edit" && (
+              <div className="rounded-[1.75rem] border border-neutral-200 bg-neutral-50 p-5">
+                <h3 className="text-2xl font-black tracking-tight">
+                  Custom Options
+                </h3>
+
+                <p className="mt-1 text-sm text-neutral-500">
+                  Add item-specific options. Coffee can have Sugar/Ice. Kottu
+                  can have Chilly/Cheese. Dessert can have Cream/Size.
+                </p>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
                   <input
-                    type="checkbox"
-                    checked={itemForm.popular}
-                    onChange={(e) =>
-                      setItemForm({ ...itemForm, popular: e.target.checked })
-                    }
-                    className="h-5 w-5"
+                    value={optionName}
+                    onChange={(e) => setOptionName(e.target.value)}
+                    placeholder="Option name: Sugar / Cheese / Size"
+                    className="rounded-2xl border border-neutral-200 bg-white p-4 outline-none focus:border-neutral-500"
                   />
-                </label>
 
-                <label className="flex items-center justify-between rounded-2xl border bg-gray-50 p-4">
-                  <div>
-                    <p className="font-bold">Available</p>
-                    <p className="text-sm text-gray-500">
-                      Turn off to hide from customer menu.
-                    </p>
-                  </div>
                   <input
-                    type="checkbox"
-                    checked={itemForm.available}
-                    onChange={(e) =>
-                      setItemForm({ ...itemForm, available: e.target.checked })
-                    }
-                    className="h-5 w-5"
+                    value={optionValues}
+                    onChange={(e) => setOptionValues(e.target.value)}
+                    placeholder="Options: No, Less, Normal, Extra"
+                    className="rounded-2xl border border-neutral-200 bg-white p-4 outline-none focus:border-neutral-500"
                   />
-                </label>
-              </div>
+                </div>
 
-              <div className="mt-6 flex flex-col-reverse gap-3 border-t pt-4 md:flex-row md:justify-between">
-                {itemMode === "edit" && (
-                  <button
-                    onClick={() => {
-                      deleteItem(itemForm.id);
-                      setItemModalOpen(false);
-                    }}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-6 py-4 font-bold text-white"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                    Delete Item
-                  </button>
-                )}
+                <button
+                  onClick={addCustomization}
+                  className="mt-3 rounded-full bg-neutral-950 px-5 py-3 font-black text-white"
+                >
+                  Add Option Group
+                </button>
 
-                <div className="flex gap-3 md:ml-auto">
-                  <button
-                    onClick={() => setItemModalOpen(false)}
-                    className="flex-1 rounded-2xl bg-gray-100 px-6 py-4 font-bold text-gray-700 md:flex-none"
-                  >
-                    Cancel
-                  </button>
+                <div className="mt-5 space-y-3">
+                  {itemCustomizations.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-5 text-center text-sm text-neutral-500">
+                      No custom options yet.
+                    </div>
+                  )}
 
-                  <button
-                    onClick={saveItem}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-6 py-4 font-bold text-white md:flex-none"
-                    style={{ backgroundColor: themeColor }}
-                  >
-                    <Save className="h-5 w-5" />
-                    Save Item
-                  </button>
+                  {itemCustomizations.map((custom) => (
+                    <div
+                      key={custom.id}
+                      className="flex flex-col justify-between gap-3 rounded-2xl bg-white p-4 md:flex-row md:items-center"
+                    >
+                      <div>
+                        <p className="font-black">{custom.name}</p>
+
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {optionsToArray(custom.options).map((option) => (
+                            <span
+                              key={option}
+                              className="rounded-full bg-neutral-100 px-3 py-1 text-sm font-bold text-neutral-600"
+                            >
+                              {option}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => deleteCustomization(custom.id)}
+                        className="rounded-full bg-red-600 px-4 py-2 text-sm font-black text-white"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </main>
+            )}
+
+            {itemMode === "create" && (
+              <div className="rounded-[1.75rem] border border-dashed border-neutral-300 bg-neutral-50 p-5">
+                <h3 className="text-lg font-black">Custom Options</h3>
+                <p className="mt-1 text-sm text-neutral-500">
+                  First save the item. Then click Edit and add options like
+                  Sugar, Ice, Cheese, Chilly, Size, Cream, etc.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <aside className="space-y-4">
+            <div className="rounded-[1.75rem] border border-neutral-200 bg-neutral-50 p-4">
+              <label className="mb-3 block text-sm font-black text-neutral-600">
+                Food Photo
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-neutral-300 bg-white p-5 font-black text-neutral-700">
+                <Upload className="h-5 w-5" />
+                Upload Photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    const url = await uploadImage(file);
+                    if (url) {
+                      setItemForm({ ...itemForm, image_url: url });
+                    }
+                  }}
+                />
+              </label>
+
+              {itemForm.image_url && (
+                <img
+                  src={itemForm.image_url}
+                  alt="Preview"
+                  className="mt-4 h-64 w-full rounded-[1.5rem] object-cover"
+                />
+              )}
+            </div>
+
+            <InputBox label="Video URL">
+              <input
+                value={itemForm.video_url}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, video_url: e.target.value })
+                }
+                placeholder="https://..."
+                className="w-full bg-transparent outline-none"
+              />
+            </InputBox>
+
+            {itemForm.video_url && (
+              <div className="rounded-[1.5rem] bg-neutral-950 p-4 text-white">
+                <div className="mb-3 flex items-center gap-2 text-sm font-black">
+                  <Video className="h-4 w-4" />
+                  Video Preview
+                </div>
+
+                <video
+                  src={itemForm.video_url}
+                  controls
+                  muted
+                  className="h-52 w-full rounded-2xl object-cover"
+                />
+              </div>
+            )}
+
+            <div className="rounded-[1.75rem] bg-neutral-950 p-5 text-white">
+              <p className="text-sm text-white/50">Customer menu link</p>
+
+              <div className="mt-3 flex items-center gap-2 text-sm font-bold">
+                <Link2 className="h-4 w-4" />
+                Live updates instantly
+              </div>
+
+              <p className="mt-4 text-xs leading-6 text-white/50">
+                After saving, customer menu will update without changing QR code.
+              </p>
+            </div>
+          </aside>
+        </div>
+
+        <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t border-neutral-100 bg-white/90 p-5 backdrop-blur md:flex-row md:justify-between">
+          {itemMode === "edit" && (
+            <button
+              onClick={() => deleteItem(itemForm.id)}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-6 py-4 font-black text-white"
+            >
+              <Trash2 className="h-5 w-5" />
+              Delete Item
+            </button>
+          )}
+
+          <div className="flex gap-3 md:ml-auto">
+            <button
+              onClick={onClose}
+              className="flex-1 rounded-full bg-neutral-100 px-6 py-4 font-black text-neutral-800 md:flex-none"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={saveItem}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-6 py-4 font-black text-white md:flex-none"
+            >
+              <Save className="h-5 w-5" />
+              Save Item
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -1030,17 +1420,17 @@ function StatsCard({
 }: {
   title: string;
   value: number;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
-    <div className="rounded-3xl border border-white/15 bg-white/10 p-5 shadow-xl backdrop-blur">
+    <div className="rounded-[1.75rem] bg-white p-5 shadow-sm ring-1 ring-black/5">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-white/60">{title}</p>
-          <p className="mt-1 text-3xl font-black text-white">{value}</p>
+          <p className="text-sm font-bold text-neutral-500">{title}</p>
+          <p className="mt-2 text-4xl font-black tracking-tight">{value}</p>
         </div>
 
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-100 text-neutral-900">
           {icon}
         </div>
       </div>
@@ -1053,25 +1443,96 @@ function TabButton({
   icon,
   active,
   onClick,
-  themeColor,
 }: {
   label: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   active: boolean;
   onClick: () => void;
-  themeColor: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-center gap-2 rounded-2xl px-5 py-4 font-bold transition"
-      style={{
-        backgroundColor: active ? themeColor : "transparent",
-        color: active ? "white" : "#374151",
-      }}
+      className={`flex items-center justify-center gap-2 rounded-[1.5rem] px-5 py-4 font-black transition ${
+        active
+          ? "bg-neutral-950 text-white"
+          : "bg-transparent text-neutral-600 hover:bg-neutral-100"
+      }`}
     >
       <span className="h-5 w-5">{icon}</span>
       {label}
     </button>
   );
+}
+
+function InputBox({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+      <label className="mb-2 block text-sm font-black text-neutral-600">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function ToggleBox({
+  title,
+  text,
+  checked,
+  onChange,
+}: {
+  title: string;
+  text: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+      <div>
+        <p className="font-black">{title}</p>
+        <p className="mt-1 text-sm text-neutral-500">{text}</p>
+      </div>
+
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-5 w-5"
+      />
+    </label>
+  );
+}
+
+function Pill({ children }: { children: ReactNode }) {
+  return (
+    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-black text-neutral-700">
+      {children}
+    </span>
+  );
+}
+
+function optionsToArray(options: unknown): string[] {
+  if (Array.isArray(options)) {
+    return options.map(String);
+  }
+
+  if (typeof options === "string") {
+    try {
+      const parsed = JSON.parse(options);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return options
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return [];
 }
